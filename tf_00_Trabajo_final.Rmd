@@ -14,6 +14,7 @@ require(corrplot)
 require(rgl)
 
 knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(base.url='https://github.com/mrverde/cancer_wisconsin_DM_I/raw/master/img/')
 datos <- read.csv(text=getURL("https://raw.githubusercontent.com/mrverde/cancer_wisconsin_DM_I/master/data/cancer_winsconsin.csv"), 
                   header = TRUE, stringsAsFactors = FALSE)
 bdkmeans <- datos[ -c(1:2) ]
@@ -49,7 +50,7 @@ url <- "http://raw.githubusercontent.com/mrverde/cancer_wisconsin_DM_I/master/im
 ```
 
 \begin{center}
-![](../../cancer_wisconsin_DM_I/img/celula.png)
+![](celula.png)
 \end{center}
 
 \newpage
