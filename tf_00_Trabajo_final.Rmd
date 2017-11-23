@@ -13,7 +13,8 @@ require(psych)
 require(corrplot)
 require(rgl)
 
-knitr::opts_chunk$set(echo = TRUE)
+
+knitr::opts_chunk$set(echo = TRUE, fig.align="center")
 datos <- read.csv(text=getURL("https://raw.githubusercontent.com/mrverde/cancer_wisconsin_DM_I/master/data/cancer_winsconsin.csv"), 
                   header = TRUE, stringsAsFactors = FALSE)
 bdkmeans <- datos[ -c(1:2) ]
