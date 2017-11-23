@@ -1,0 +1,415 @@
+---
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+#setwd("D:/Universidad/Master/Mineria de datos I/05 - Trabajo final")
+setwd("/media/usuario/Mula/Universidad/Master/ZZZ Asignaturas finalizadas/Mineria de datos I/05 - Trabajo final/")
+datos <- read.csv("cancer_winsconsin.csv", header = TRUE, stringsAsFactors = FALSE)
+bdkmeans <- datos[ -c(1:2) ]
+options(digits=2)
+```
+# Sobre la Base de datos
+La autor?a de esta Base de datos es de William Wolberg, Nick Street y Olvi Mangasarian.
+Las variables han sido calculadas gracias a la imagen digitalizada de una biopsia del tejido mamario y describen caracter?sticas del n?cleo de las c?lulas. Las t?cnicas usadas est?n descritas en el art?culo de K.P. Bennett y O.L. Mangasarian: "Robust Linear Programming Discrimination of Two Linearly Inseparable Sets", Optimization Methods and Software 1, 1992, 23-34
+
+La base de datos ha sido descargada de la web Kaggle.com, en la direcci?n: http://bit.ly/2qse1el. Tambi?n est? disponible a trav?s del servidor ftp de la UW CS. Tambi?n puede encontrarse en el repositorio de Machine Learning de la UCI en la direcci?n:   http://bit.ly/1L1zT4y
+
+Informaci?n de las variables:  
+1) ID  
+2) Diagn?stico (M = Maligno, B = Benigno)  
+3-32) Diez caracter?sticas calculadas para cada n?cleo de la c?lula:    
+
+a) El radio (radius) - La media de la distancia desde el centro hasta los puntos del per?metro
+b) La textura (texture) - La desviaci?n est?ndar de los valores en escala de grises
+c) El per?metro (perimeter)
+d) El ?rea (area)
+e) La suavidad (smoothness) - Variaci?n local en las longitudes del radio
+f) Compactaci?n (compactness) - Per?metro^2^/(?rea-1)
+g) Concavidad (concavity) - Gravedad de las partes c?ncavas del contorno
+h) Puntos c?ncavos (concave points) -N?mero de porciones c?ncavas del contorno
+i) Simetr?a (symmetry)
+j) Dimensi?n fractal (fractal dimensi?n) - "Aproximaci?n de los bordes costeros"-1
+
+La media, el error est?ndar y la peor o la m?s grande de cada una de estas caracter?sticas han sido calculadas por ordenador para cada imagen, resultando en 30 variables diferentes. Todos los valores aparecen con cuatro cifras significativas. No hay valores perdidos. En total hay 357 casos benignos y 212 malignos.  
+  
+  
+
+\begin{center}
+\includegraphics{D:/Universidad/Master/Mineria de datos I/05 - Trabajo final/celula.png}
+\end{center}
+
+\newpage
+
+# K-MEANS
+Aunque la finalidad del algoritmo K-Means no es la de la clasificaci?n, la base de datos incorpora una variable que diferencia entre tumores benignos y malignos. Por ello voy a usar el algoritmo con ?sta finalidad. Mi idea es acabar encontrando la configuraci?n que mejor clasifique los datos. Que maximice los aciertos.  
+
+Lo primero que hago es borrar la memoria de R, cargar la base de datos y eliminar las variables cualitativas id y diagnosis:
+
+```{r cargarBD}
+rm(list= ls())
+#setwd("D:/Universidad/Master/Mineria de datos I/05 - Trabajo final")
+setwd("/media/usuario/Mula/Universidad/Master/ZZZ Asignaturas finalizadas/Mineria de datos I/05 - Trabajo final/")
+datos <- read.csv("cancer_winsconsin.csv", header = TRUE)
+bdkmeans <- datos[ -c(1:2) ]
+```
+
+Para ver como se relacionan las variables entre s?, hago un diagrama de dispersi?n con el siguiente comando: 
+```{r diagrama_dispersion_1}
+#plot(bdkmeans[,]) Silencio el gr?fico porque es muy grande y da error. Lo adjunto aparte.
+```
+El resultado del diagrama de dispersi?n muestra una gran varianza entre algunas de las variables, as? como la existencia de valores at?picos que pueden influir negativamente en nuestro modelo de clasificaci?n.   
+Para eliminar estos efectos voy a probar diferentes transformaciones de los datos: obteniendo su logaritmo, estandariz?ndolos y eliminando los outliers igualando su valor a los datos de determinados percentiles.  
+```{r transformacion_datos}
+#Calculo del logaritmo
+bdkmeans <- log10(bdkmeans)
+#Estandarizador
+bdkmeans <- scale(bdkmeans)
+bdkmeans <- data.frame(bdkmeans[,colSums(is.na(bdkmeans))<nrow(bdkmeans)])
+#Eliminador de outliers
+percentilup <- 85
+percentildown <- 15
+for (columna in colnames(bdkmeans)){
+  up <-c("bdkmeans$",columna,"[bdkmeans$",columna,">quantile(bdkmeans$",columna,",", 
+         percentilup*0.01,")] <- quantile(bdkmeans$",columna,",", percentilup*0.01,")")
+  down <-c("bdkmeans$",columna,"[bdkmeans$",columna,"<quantile(bdkmeans$",columna,", ", 
+           percentildown*0.01,")] <- quantile(bdkmeans$",columna,", ", 
+           percentildown*0.01,")")
+  up <-paste(up, collapse="")
+  down <-paste(down, collapse="")
+  eval(parse(text=up))
+  eval(parse(text=down))
+}
+```
+
+En este punto si volvemos a dibujar el diagrama de dispersi?n y podemos ver los cambios:  
+```{r diagrama_dispersion_2}
+#plot(bdkmeans[,]) Silencio el gr?fico porque es muy grande y da error. Lo adjunto aparte.
+```
+
+Podemos comprobar en el diagrama de dispersi?n, como con los outliers al 5% los datos son heteroced?sticos, y c?mo se transforman en datos homoced?sticos cuando eliminamos los outliers al 15%.  En este punto ya los datos parecen correctos y procedo a hacer el K-Means. En cuanto al n?mero de grupos le indico que cree dos, para ver si es capaz de clasificar por un lado los tumores malignos y por el otro los benignos. El K-Means es un algoritmo iterativo que resuelve un problema de optimizaci?n.   
+```{r k_means}
+kmeans_cancer <-  kmeans(bdkmeans,2, iter.max =1000, nstart = 1000)
+```
+El resultado que devuelve es un m?nimo local que no nos garantiza que la soluci?n sea la mejor globalmente, por ello pueden obtenerse soluciones diferentes en funci?n del punto en el que comencemos a iterar. Para intentar alcanzar un m?nimo global, le indico que comience a iterar en mil puntos diferentes y que haga un m?ximo de mil iteraciones en cada uno de los inicios.  
+
+Creando una tabla de contingencia podemos comprobar c?mo ha clasificado el algoritmo los grupos y su correspondencia con la diagnosis.  
+```{r tabla_res_k_means}
+tabla <- table(datos$diagnosis, kmeans_cancer$cluster)
+tabla 
+```
+
+Despu?s de esto podemos calcular el porcentaje de acierto que tuvo el algoritmo a la hora de agrupar los casos en los grupos benigno y maligno.  
+
+```{r aciertos_fallos_k_means}
+aciertos <- max(tabla[1,]) + max(tabla[2,])
+fallos <- min(tabla[1,])+ min(tabla[2,])
+por_ac = aciertos*100/569
+por_fa = 100-por_ac
+por_ac
+```
+
+
+Este caso en concreto es el que mejor clasifica los datos. Hice adem?s de ?ste otras pruebas con diferentes ajustes que paso a resumir en la siguiente tabla:  
+
+
+```{r table2, echo=FALSE, message=FALSE, warnings=FALSE, results='asis'}
+tabl <- "
+| Normalizados  | Logaritmo     | Sin outliers al 5%  | Sin outliers al 10% | Sin outliers al 15% | % de acierto |
+|:-------------:|:-------------:|:-------------------:|:-------------------:|:-------------------:|:------------:|
+|               |               |                     |                     |                     |  85,41%      |
+|       1       |               |                     |                     |                     |  91,03%      |
+| 2             | 1             |                     |                     |                     |  93,05%      |
+|               |               |           1         |                     |                     |  86,82%      |
+|               |               |                     |         1           |                     |  87,34%      |
+|               |               |                     |                     |        1            |  89,10%      |
+|        1      |               |          2          |                     |                     |  91,74%      |
+|        1      |               |                     |          2          |                     |  93,67%      |
+|        1      |               |                     |                     |       2             |  93,84%      |
+|        2      |               |          1          |                     |                     |  91,22%      |
+|        2      |               |                     |          1          |                     |  92,44%      |
+|        2      |               |                     |                     |      1              |  93,32%      |
+|        3      |       2       |          1          |                     |                     |  92,97%      |
+|        3      |       2       |                     |          1          |                     |  93,14%      |
+|        3      |       2       |                     |                     |      1              |  92,97%      |
+|        2      |       1       |          3          |                     |                     |  93,50%      |
+|        2      |       1       |                     |          3          |                     |  94,03%      |
+|        2      |       1       |                     |                     |       3             |  94,37%**    |
+Los n?meros identifican el orden en el que se hicieron las transformaciones. **El modelo con mayor porcentaje de acierto  
+"
+cat(tabl) 
+```
+El mejor resultado se obtiene con las siguientes transformaciones de los datos:   
+1) La aplicaci?n del logaritmo  
+2) La normalizaci?n de los datos  
+3) La eliminaci?n de los outliers al 15%  
+\newpage
+Por ?ltimo, he hecho una funci?n que sirve para clasificar los nuevos casos. La funci?n es muy simple, simplemente coge la posici?n de los centroides que devuelve el K-Means y comprueba cu?l es el centroide m?s pr?ximo: el de los tumores malignos o el de los tumores benignos. El c?digo de la funci?n es el siguiente:  
+```{r funcion_nuevos_casos}
+clasificador <- function(nuevo_punto){
+  if (dist(rbind(kmeans_cancer$centers[1],nuevo_punto))
+      <dist(rbind(kmeans_cancer$centers[2],nuevo_punto))){
+    return ("M")
+    
+  }else if (dist(rbind(kmeans_cancer$centers[2],nuevo_punto))
+            <dist(rbind(kmeans_cancer$centers[1],nuevo_punto))){
+    return ("B")
+  }
+}
+```  
+Y podemos comprobar c?mo clasifica los puntos con cualquier entrada de la base de datos:  
+```{r prueba_nuevos_casos}
+clasificador(bdkmeans[100,])
+clasificador(bdkmeans[507,])
+``` 
+
+Como puede comprobarse, el clasificador final que hemos obtenido es bastante bueno, ya que es capaz de acertar un 94,53% de los casos. En un trabajo posterior habr?a que mejorar el modelo e intentar reducir los casos en los que el modelo clasifica como benignos tumores malignos. Si bien estos casos son muy pocos -1,76%, 10 casos sobre un total de 569-, estos errores pueden ser fatales para la persona que los sufre. Estar?amos reduciendo sus posibilidades de sobrevivir. A su vez, ser?a interesante comprobar si esta clasificaci?n err?nea se debe a que estos tumores malignos se encuentran en un estado inicial de desarrollo que motiva sus valores at?picos. Otra posible v?a de estudio ser?a centrarse en cada una de las variables de forma individual, y ver si alguna de ellas arroja valores que puedan alertarnos de que el tumor es maligno.
+
+\newpage
+
+# CL?STER JER?RQUICO  
+El cl?ster jer?rquico o dendrograma es otro m?todo de aprendizaje no supervisado. En este caso tambi?n he decidido separar las observaciones en dos grupos: los benignos y los malignos, y ver c?mo el algoritmo los separa. En primer lugar, vuelvo a cargar los datos de la base de datos, sin las transformaciones del ejercicio anterior:  
+```{r reset_bd_hc}
+bdkmeans <- datos[ -c(1:2) ]
+``` 
+Como la covarianza de mis variables es muy dispar, he optado por transformarlas calcul?ndoles el logaritmo y normaliz?ndolos.  
+
+```{r normal_hc}
+bdkmeans <- log10(bdkmeans)
+bdkmeans <- scale(bdkmeans)
+bdkmeans <- data.frame(bdkmeans[,colSums(is.na(bdkmeans))<nrow(bdkmeans)])
+``` 
+Tras esto, hay que decidir con qu? tipo de medida de disimilitud queremos hacer el cl?ster jer?rquico. La funci?n que R tiene implementada permite diferentes opciones. He optado por crear un bucle y realizar el dendrograma con todas las opciones.  
+
+```{r bucle_hc, fig.height=4}
+for (i in c("ward.D","single","complete","average","mcquitty","median","centroid")){
+  hc <- hclust(dist(bdkmeans), method=i) 
+  par(mar=c(0, 4, 4, 2)) 
+  plot(hc, xlab="", sub="", hang = -1,labels=datos$diagnosis, 
+       main=paste(c("Hierarchical cluster - ", i, "method"),collapse=""))
+}
+``` 
+
+En general, ninguno de los resultados parece bueno. Todos tienen much?simas ramificaciones y mezclan bastante los casos benignos y malignos. No sabr?a por qu? rama del cl?ster cortar. Por ello pruebo a transformar los outliers de la muestra al percentil 15 por abajo y al 85 por arriba y volver a realizar los dendrogramas.  
+
+```{r bucle_hc_no_outliers, fig.height=4}
+percentilup <- 85
+percentildown <- 15
+for (columna in colnames(bdkmeans)){
+  up <-c("bdkmeans$",columna,"[bdkmeans$",columna,">quantile(bdkmeans$",columna,",", 
+         percentilup*0.01,")] <- quantile(bdkmeans$",columna,",", percentilup*0.01,")")
+  down <-c("bdkmeans$",columna,"[bdkmeans$",columna,"<quantile(bdkmeans$",columna,", ", 
+         percentildown*0.01,")] <- quantile(bdkmeans$",columna,", ", 
+         percentildown*0.01,")")
+  up <-paste(up, collapse="")
+  down <-paste(down, collapse="")
+  eval(parse(text=up))
+  eval(parse(text=down))
+}
+
+for (i in c("ward.D","single","complete","average","mcquitty","median","centroid")){
+  hc <- hclust(dist(bdkmeans), method=i) 
+  par(mar=c(0, 4, 4, 2)) 
+  plot(hc, xlab="", sub="", hang = -1,labels=datos$diagnosis, 
+       main=paste(c("Hierarchical cluster - ", i, "method"),collapse=""))
+}
+```
+
+De todos los m?todos el que mejor clasifica es el de la media. Divide los dos grupos de una forma bastante correcta y es f?cil identificar el lugar d?nde podr?a cortar las ramas para separar ambos grupos. Para afinar un poco m?s, en un trabajo m?s en profundidad habr?a que analizar los motivos por los que dentro de las dos ramificaciones principales hay algunas ramas con grupos de individuos que pertenecen al otro grupo. Creo que esto es se?al de que comparten alguna caracter?stica en com?n que los hace identificables.  
+
+# ANAL?SIS DE COMPONENTES PRINCIPALES
+El an?lisis de componentes principales nos permite reducir la dimensionalidad de los datos. Reseteo la base de datos y compruebo el resultado de la matriz de covarianza y correlaci?n.  
+```{r reset_bd_pca}
+bdkmeans <- datos[ -c(1,2) ]
+mat_cov <- cov(bdkmeans)
+``` 
+La matriz de covarianza muestra resultados muy dispares entre las variables y esto puede influir en el an?lisis. Por ello procedo a normalizar los datos y a quitar los outliers.  
+```{r norm_bd_pca}
+bdkmeans <- data.frame(scale(bdkmeans))
+percentilup <- 85
+percentildown <- 15
+for (columna in colnames(bdkmeans)){
+  up <-c("bdkmeans$",columna,"[bdkmeans$",columna,">quantile(bdkmeans$",columna,",", 
+         percentilup*0.01,")] <- quantile(bdkmeans$",columna,",", percentilup*0.01,")")
+  down <-c("bdkmeans$",columna,"[bdkmeans$",columna,"<quantile(bdkmeans$",columna,", ", 
+           percentildown*0.01,")] <- quantile(bdkmeans$",columna,", ", percentildown*0.01,
+           ")")
+  up <-paste(up, collapse="")
+  down <-paste(down, collapse="")
+  eval(parse(text=up))
+  eval(parse(text=down))
+}
+``` 
+Vuelvo a calcular la matriz de covarianza y la matriz de correlaci?n. Dibujo esta ?ltima para ver la relaci?n entre las variables.  
+```{r corr_plot, fig.width=6}
+mat_cov <- cov(bdkmeans)
+mat_cor <- cov2cor(mat_cov)
+corrplot::corrplot(mat_cor, tl.cex=0.5, tl.col="black")
+``` 
+
+Tras esto realizo el an?lisis de componentes principales sobre la matriz de correlaci?n.  
+```{r pca}
+bd_pca <- prcomp(mat_cor)
+summary(bd_pca)
+```
+Del an?lisis podemos inferir como entre los tres primeros componentes principales acumulan un 91,28% de la varianza explicada. Si a?adimos el cuarto, acumulan un 95,5% de la varianza explicada. Voy a quedarme con los 4 primeros, aunque como los 3 primeros acumulan mucha varianza voy a utilizarlos para dibujar gr?ficos con ellos. Podemos ver la varianza y el biplot del an?lisis a continuaci?n. 
+```{r pca_plot,fig.width=6,fig.height=3}
+plot(bd_pca, xlab = "Principal Component", type = "b")
+```
+```{r pca_biplot}
+biplot(bd_pca, scale = 0)
+```
+
+El siguiente paso es comprobar lo que pesan los componentes principales en los datos.  
+```{r pca_todata}
+bdkmeans_pca <- scale(as.matrix(bdkmeans),center = bd_pca$center, 
+                      scale = bd_pca$scale) %*% bd_pca$rotation[ , 1:4]
+```
+Y con esto ya podemos dibujar en el espacio los datos con las 3 primeras componentes principales.  
+```{r pca_points_plot,warning=FALSE}
+diagnosis <- datos$diagnosis
+diagnosis[diagnosis=="B"] <- 3
+diagnosis[diagnosis=="M"] <- 2
+rgl::plot3d(bdkmeans_pca[,1],bdkmeans_pca[,2],bdkmeans_pca[,3], 
+       col=diagnosis, size=5, xlab= "PC1",  ylab= "PC2",  zlab= "PC3")
+#Esta libreria crea un objeto interactivo que no puede reproducirse aqui directamente. 
+#Hago capturas de pantalla y las adjunto a continuaci?n.
+```
+![](D:/Universidad/Master/Mineria de datos I/05 - Trabajo final/Graficos/03 - PCA/03e.png) ![](D:/Universidad/Master/Mineria de datos I/05 - Trabajo final/Graficos/03 - PCA/03f.png)  
+![](D:/Universidad/Master/Mineria de datos I/05 - Trabajo final/Graficos/03 - PCA/03g.png) ![](D:/Universidad/Master/Mineria de datos I/05 - Trabajo final/Graficos/03 - PCA/03h.png)
+
+En los gr?ficos aparecen pintados de verde los casos benignos y en rojo los casos malignos. Puede inferirse por la distribuci?n de ambos grupos que la extracci?n de los componentes principales ha sido un ?xito y se siguen apreciando las diferencias entre ambos grupos. Del resultado podemos inferir que hay una regi?n intermedia entre tumores benignos y malignos d?nde se entremezclan ambos casos. Podemos ver tambi?n como hay algunos casos de tumores malignos que son muy dif?ciles de detectar, ya que presentan las caracter?sticas de los tumores benignos.  
+
+Por ?ltimo, pruebo a hacer un cl?ster jer?rquico por el m?todo completo y el de la media sobre el resultado de los componentes principales.
+```{r pca_hc, fig.height=3}
+for (i in c("complete","average")){
+  hc <- hclust(dist(bdkmeans_pca), method=i) 
+  plot(hc, hang = -1,labels=datos$diagnosis, xlab="", sub="", 
+       main=paste(c("Hierarchical cluster - ", i, "method"),collapse=""))
+}
+```
+\newpage
+
+# AN?LISIS FACTORIAL
+El an?lisis factorial es una t?cnica estad?stica que permite extraer variables latentes que explican las relaciones entre un conjunto de variables. Para llevarlo a cabo en primer lugar reseteo la base de datos, cargo la librer?a necesaria para poder realizarlo y calculo las matrices de covarianza y correlaci?n.  
+```{r reset_fa}
+library(psych)
+bdkmeans <- datos[ -c(1,2) ]
+bdkmeans <- data.frame(scale(bdkmeans))
+mat_cov <- cov(bdkmeans)
+mat_cor <- cov2cor(mat_cov)
+``` 
+A continuaci?n, realizo el test de Kaiser-Meyer-Olkin. Este test nos permite saber si nuestros datos cumplen las caracter?sticas necesarias para poderles hacer un an?lisis factorial. 
+```{r kmo}
+KMO(mat_cor)
+``` 
+Del resultado del test inferimos:  
+1. Valores +90% - concave.points_mean, concavity_worst  
+2. Valores 80-90% - radius_mean, perimeter_mean, area_mean, smoothness_mean, compactness_mean, concavity_mean, symmetry_mean, fractal_dimension_mean, radius_se, perimeter_se, area_se, compactness_se, concavity_se, concave.points_se, fractal_dimension_se, radius_worst, perimeter_worst, area_worst, compactness_worst, concave.points_worst, fractal_dimension_worst  
+3. Valores 70-80% - smoothness_worst, symmetry_worst  
+4. Valores 60-70% - texture_mean, somoothness_se, texture_worst  
+5. Valores -60% - texture_se, symmetry_se   
+
+El resultado del test en su conjunto es positivo pero las variables que est?n por debajo del 60% son mediocres para realizar el an?lisis factorial, por ello procedo a eliminarlas y a recalcular las matrices de covarianza y correlaci?n.  
+```{r sup_var_kmo}
+bdkmeans <- bdkmeans[ -c(12,19) ]
+mat_cov <- cov(bdkmeans)
+mat_cor <- cov2cor(mat_cov)
+``` 
+Realizo ahora el test de Barlett.  
+```{r bartlett}
+cortest.bartlett(mat_cor, n=569)
+``` 
+El test de Bartlett supone que las varianzas son iguales en todos los grupos o muestras. Si fuese as? no podr?amos realizar el an?lisis factorial, pero con los resultados que obtenemos rechazamos esa hip?tesis. Podemos realizar el an?lisis factorial. Ahora hay que decidir el n?mero de factores que vamos a escoger.  
+```{r parallel,message=FALSE}
+fa.parallel(mat_cor, n.obs=569, fa="both", n.iter=100,
+            main="Scree plots with parallel analysis")
+``` 
+Del an?lisis extraemos que debemos usar 5 factores. Hacemos el an?lisis factorial y comprobamos la distribuci?n de las variables en funci?n de los factores. 
+```{r fa}
+fa <- fa(mat_cor, nfactors=5, rotate="none", fm="pa")
+fa
+factor.plot(fa, labels=rownames(fa$loadings))
+``` 
+
+\newpage
+
+```{r fa_diagram}
+fa.diagram(fa,simple=FALSE,e.size=.08, rsize=.8)
+``` 
+
+\newpage
+Se puede ver como las variables est?n muy pegadas y no tienen mucha varianza. Para evitarlo y aumentar la varianza entre los factores utilizamos la rotaci?n ortogonal varimax. 
+```{r fa_varimax}
+fa.varimax <- fa(mat_cor, nfactors=5, rotate="varimax", fm="pa")
+fa.varimax
+factor.plot(fa.varimax, labels=rownames(fa$loadings))
+```
+\newpage
+```{r fa_diagram_varimax}
+fa.diagram(fa.varimax,simple=FALSE, e.size=.08, rsize=.8)
+``` 
+
+\newpage
+Por ?ltimo realizamos el an?lisis factorial con la rotaci?n oblicua promax. 
+```{r fa_promax, warning=FALSE,message=FALSE}
+fa.promax <- fa(mat_cor, nfactors=5, rotate="promax", fm="pa")
+```
+```{r fa_promax_2, warning=FALSE}
+fa.promax
+factor.plot(fa.promax, labels=rownames(fa$loadings))
+```
+\newpage
+```{r fa_diagram_promax}
+fa.diagram(fa.promax,simple=FALSE, e.size=.08, rsize=.8)
+``` 
+
+Como conclusi?n decir que del an?lisis factorial derivan las siguientes relaciones de variables y factores:
+```{r table1, echo=FALSE, message=FALSE, warnings=FALSE, results='asis', size='small'}
+tabl <- "
+|         FACTOR 1       |          FACTOR 2         |           FACTOR 3           |
+|:----------------------:|:-------------------------:|:----------------------------:|
+|         area_mean      |      concavity_mean       |     area_se                  |  
+|      area_se           |      concavity_se         |      radius_se               | 
+|         area_worst     |      concavity_worst      |       perimeter_se           | 
+|        radius_mean     |   fractal_dimension_worst |      smoothness_se           | 
+|       radius_se        |   fractal_dimension_mean  |      smoothness_mean         |
+|       radius_worst     |   fractal_dimension_se    |                              | 
+|    perimeter_mean      |   compactness_worst       |                              | 
+|    perimeter_worst     |    compactness_mean       |                              |
+|     perimeter_se       |     compactness_se        |                              | 
+|    concave.points_mean |    concave.points_se      |                              |
+| concave.points_worst   |                           |                              |
+|       concavity_mean   |                           |                              |
+|------------------------|---------------------------|------------------------------|
+|   **TAMA?O**           |     **FORMA**             |   **GRADO DE DESVIACI?N**    | 
+
+"
+cat(tabl) 
+```
+\newpage
+```{r table3, echo=FALSE, message=FALSE, warnings=FALSE, results='asis', size='small'}
+tabl <- "
+|         FACTOR 4          |         FACTOR 5      |
+|:-------------------------:|:---------------------:|
+|    texture_worst          | concave.points_mean   |  
+|    texture_mean           | concave.points_worst  | 
+|                           |   smoothness_mean     | 
+|                           |   smoothness_worst    | 
+|                           |  symmetry_mean        | 
+|                           |  symmetry_worst       | 
+|                           |fractal_dimension_mean | 
+|                           |fractal_dimension_worst| 
+|                           |  compactness_mean     | 
+|                           |  compactness_worst    | 
+|                           |  concavity_worst      | 
+|---------------------------|-----------------------|
+|     **TEXTURA**           | **GRADO DE ASIMETR?A**| 
+
+"
+cat(tabl) 
+```
+Aparece abajo de cada factor, en negrita, el nombre que le he dado a cada una de las variables latentes en funci?n de las variables con las que se relaciona. 
