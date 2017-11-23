@@ -14,7 +14,6 @@ require(corrplot)
 require(rgl)
 
 knitr::opts_chunk$set(echo = TRUE)
-knitr::opts_knit$set(base.url='https://github.com/mrverde/cancer_wisconsin_DM_I/raw/master/img/')
 datos <- read.csv(text=getURL("https://raw.githubusercontent.com/mrverde/cancer_wisconsin_DM_I/master/data/cancer_winsconsin.csv"), 
                   header = TRUE, stringsAsFactors = FALSE)
 bdkmeans <- datos[ -c(1:2) ]
@@ -44,13 +43,131 @@ j) Dimensión fractal (fractal dimensión) - "Aproximación de los bordes costeros"
 
 La media, el error estándar y la peor o la más grande de cada una de estas características han sido calculadas por ordenador para cada imagen, resultando en 30 variables diferentes. Todos los valores aparecen con cuatro cifras significativas. No hay valores perdidos. En total hay 357 casos benignos y 212 malignos.  
   
-```{r, echo=FALSE}
-# Define variable containing url
-url <- "http://raw.githubusercontent.com/mrverde/cancer_wisconsin_DM_I/master/img/celula.png"
+
+
+
+![](https://github.com/mrverde/cancer_wisconsin_DM_I/raw/master/img/celula.png)
+
+# K-MEANS
+Aunque la finalidad del algoritmo K-Means no es la de la clasificación, la base de datos incorpora una variable que diferencia entre tumores benignos y malignos. Por ello voy a usar el algoritmo con ésta finalidad. Mi idea es acabar encontrando la configuración que mejor clasifique los datos. Que maximice los aciertos.  
+
+Lo primero que hago es borrar la memoria de R, cargar la base de datos y eliminar las variables cualitativas id y diagnosis:
+
+```{r cargarBD}
+datos <- read.csv(text=getURL("https://raw.githubusercontent.com/mrverde/cancer_wisconsin_DM_I/master/data/cancer_winsconsin.csv"), 
+                  header = TRUE, stringsAsFactors = FALSE)
+bdkmeans <- datos[ -c(1:2) ]
 ```
 
-\begin{center}
-![](celula.png)
-\end{center}
+Para ver como se relacionan las variables entre sí, hago un diagrama de dispersión con el siguiente comando: 
+```{r diagrama_dispersion_1, eval=FALSE}
+#plot(bdkmeans[,]) Silencio el gráfico porque es muy grande y da error. Lo adjunto aparte.
+```
+El resultado del diagrama de dispersión muestra una gran varianza entre algunas de las variables, así como la existencia de valores atípicos que pueden influir negativamente en nuestro modelo de clasificación.   
+Para eliminar estos efectos voy a probar diferentes transformaciones de los datos: obteniendo su logaritmo, estandarizándolos y eliminando los outliers igualando su valor a los datos de determinados percentiles.  
+```{r transformacion_datos}
+#Calculo del logaritmo
+bdkmeans <- log10(bdkmeans)
+#Estandarizador
+bdkmeans <- scale(bdkmeans)
+bdkmeans <- data.frame(bdkmeans[,colSums(is.na(bdkmeans))<nrow(bdkmeans)])
+#Eliminador de outliers
+percentilup <- 85
+percentildown <- 15
+for (columna in colnames(bdkmeans)){
+  up <-c("bdkmeans$",columna,"[bdkmeans$",columna,">quantile(bdkmeans$",columna,",", 
+         percentilup*0.01,")] <- quantile(bdkmeans$",columna,",", percentilup*0.01,")")
+  down <-c("bdkmeans$",columna,"[bdkmeans$",columna,"<quantile(bdkmeans$",columna,", ", 
+           percentildown*0.01,")] <- quantile(bdkmeans$",columna,", ", 
+           percentildown*0.01,")")
+  up <-paste(up, collapse="")
+  down <-paste(down, collapse="")
+  eval(parse(text=up))
+  eval(parse(text=down))
+}
+```
+
+En este punto si volvemos a dibujar el diagrama de dispersión y podemos ver los cambios:  
+```{r diagrama_dispersion_2}
+#plot(bdkmeans[,]) Silencio el gráfico porque es muy grande y da error. Lo adjunto aparte.
+```
+
+Podemos comprobar en el diagrama de dispersión, como con los outliers al 5% los datos son heterocedásticos, y cómo se transforman en datos homocedásticos cuando eliminamos los outliers al 15%.  En este punto ya los datos parecen correctos y procedo a hacer el K-Means. En cuanto al número de grupos le indico que cree dos, para ver si es capaz de clasificar por un lado los tumores malignos y por el otro los benignos. El K-Means es un algoritmo iterativo que resuelve un problema de optimización.   
+```{r k_means}
+kmeans_cancer <-  kmeans(bdkmeans,2, iter.max =1000, nstart = 1000)
+```
+El resultado que devuelve es un mínimo local que no nos garantiza que la solución sea la mejor globalmente, por ello pueden obtenerse soluciones diferentes en función del punto en el que comencemos a iterar. Para intentar alcanzar un mínimo global, le indico que comience a iterar en mil puntos diferentes y que haga un máximo de mil iteraciones en cada uno de los inicios.  
+
+Creando una tabla de contingencia podemos comprobar cómo ha clasificado el algoritmo los grupos y su correspondencia con la diagnosis.  
+```{r tabla_res_k_means}
+tabla <- table(datos$diagnosis, kmeans_cancer$cluster)
+tabla 
+```
+
+Después de esto podemos calcular el porcentaje de acierto que tuvo el algoritmo a la hora de agrupar los casos en los grupos benigno y maligno.  
+
+```{r aciertos_fallos_k_means}
+aciertos <- max(tabla[1,]) + max(tabla[2,])
+fallos <- min(tabla[1,])+ min(tabla[2,])
+por_ac = aciertos*100/569
+por_fa = 100-por_ac
+por_ac
+```
+
+
+Este caso en concreto es el que mejor clasifica los datos. Hice además de éste otras pruebas con diferentes ajustes que paso a resumir en la siguiente tabla:  
+
+
+```{r table2, echo=FALSE, message=FALSE, warnings=FALSE, results='asis'}
+tabl <- "
+| Normalizados  | Logaritmo     | Sin outliers al 5%  | Sin outliers al 10% | Sin outliers al 15% | % de acierto |
+|:-------------:|:-------------:|:-------------------:|:-------------------:|:-------------------:|:------------:|
+|               |               |                     |                     |                     |  85,41%      |
+|       1       |               |                     |                     |                     |  91,03%      |
+| 2             | 1             |                     |                     |                     |  93,05%      |
+|               |               |           1         |                     |                     |  86,82%      |
+|               |               |                     |         1           |                     |  87,34%      |
+|               |               |                     |                     |        1            |  89,10%      |
+|        1      |               |          2          |                     |                     |  91,74%      |
+|        1      |               |                     |          2          |                     |  93,67%      |
+|        1      |               |                     |                     |       2             |  93,84%      |
+|        2      |               |          1          |                     |                     |  91,22%      |
+|        2      |               |                     |          1          |                     |  92,44%      |
+|        2      |               |                     |                     |      1              |  93,32%      |
+|        3      |       2       |          1          |                     |                     |  92,97%      |
+|        3      |       2       |                     |          1          |                     |  93,14%      |
+|        3      |       2       |                     |                     |      1              |  92,97%      |
+|        2      |       1       |          3          |                     |                     |  93,50%      |
+|        2      |       1       |                     |          3          |                     |  94,03%      |
+|        2      |       1       |                     |                     |       3             |  94,37%**    |
+Los números identifican el orden en el que se hicieron las transformaciones. **El modelo con mayor porcentaje de acierto  
+"
+cat(tabl) 
+```
+El mejor resultado se obtiene con las siguientes transformaciones de los datos:   
+1) La aplicación del logaritmo  
+2) La normalización de los datos  
+3) La eliminación de los outliers al 15%  
+\newpage
+Por último, he hecho una función que sirve para clasificar los nuevos casos. La función es muy simple, simplemente coge la posición de los centroides que devuelve el K-Means y comprueba cuál es el centroide más próximo: el de los tumores malignos o el de los tumores benignos. El código de la función es el siguiente:  
+```{r funcion_nuevos_casos}
+clasificador <- function(nuevo_punto){
+  if (dist(rbind(kmeans_cancer$centers[1],nuevo_punto))
+      <dist(rbind(kmeans_cancer$centers[2],nuevo_punto))){
+    return ("M")
+    
+  }else if (dist(rbind(kmeans_cancer$centers[2],nuevo_punto))
+            <dist(rbind(kmeans_cancer$centers[1],nuevo_punto))){
+    return ("B")
+  }
+}
+```  
+Y podemos comprobar cómo clasifica los puntos con cualquier entrada de la base de datos:  
+```{r prueba_nuevos_casos}
+clasificador(bdkmeans[100,])
+clasificador(bdkmeans[507,])
+``` 
+
+Como puede comprobarse, el clasificador final que hemos obtenido es bastante bueno, ya que es capaz de acertar un 94,53% de los casos. En un trabajo posterior habría que mejorar el modelo e intentar reducir los casos en los que el modelo clasifica como benignos tumores malignos. Si bien estos casos son muy pocos -1,76%, 10 casos sobre un total de 569-, estos errores pueden ser fatales para la persona que los sufre. Estaríamos reduciendo sus posibilidades de sobrevivir. A su vez, sería interesante comprobar si esta clasificación errónea se debe a que estos tumores malignos se encuentran en un estado inicial de desarrollo que motiva sus valores atípicos. Otra posible vía de estudio sería centrarse en cada una de las variables de forma individual, y ver si alguna de ellas arroja valores que puedan alertarnos de que el tumor es maligno.
 
 \newpage
