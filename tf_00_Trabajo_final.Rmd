@@ -49,7 +49,7 @@ url <- "http://raw.githubusercontent.com/mrverde/cancer_wisconsin_DM_I/master/im
 ```
 
 \begin{center}
-![](cancer_wisconsin_DM_I/img/celula.png)
+![](../../cancer_wisconsin_DM_I/img/celula.png)
 \end{center}
 
 \newpage
